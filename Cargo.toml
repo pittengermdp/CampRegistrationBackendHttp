@@ -1,0 +1,21 @@
+[package]
+name = "lambda_http"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+lambda_lib = { path = "../lambda_lib" }
+lambda_http = "*"
+lambda_runtime = "*"
+tokio = { version = "*", features = ["macros", "rt-multi-thread"] }
+tracing = "*"
+tracing-subscriber = { version = "*", features = ["env-filter"] }
+axum = { version = "*", features = ["ws"] }
+tower-http = { version = "*", features = ["trace", "cors"] }
+hyper = { version = "*", features = ["full"] }
+tower = { version = "*", features = ["util"] }
+serde_json = "1.0.140"
+async-stripe = "0.40.2"
+thiserror = "2.0.12"
+chrono = { version = "0.4.40", features = ["serde"] }
+futures = "*"
