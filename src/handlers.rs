@@ -2,20 +2,27 @@ use axum::response::IntoResponse;
 use axum::{http::StatusCode, Extension};
 use lambda_lib::{AppState, PaymentSheetRequest};
 use serde_json::{json, Value};
+use std::sync::Arc;
 use stripe::{
     Client, CreateCustomer, CreateEphemeralKey, CreatePaymentIntent,
     CreatePaymentIntentAutomaticPaymentMethods, Currency, Customer, EphemeralKey, PaymentIntent,
 };
+use tokio::sync::Mutex;
 use tracing::{error, info};
 
 /// POST /payment_sheet endpoint creates a Customer, an Ephemeral Key, and a PaymentIntent with automatic payment methods enabled.
 #[tracing::instrument(skip(state))]
 pub async fn create_payment_sheet_handler(
-    axum::extract::Extension(state): axum::extract::Extension<AppState>,
+    axum::extract::Extension(state): axum::extract::Extension<Arc<Mutex<AppState>>>,
     axum::extract::Json(payload): axum::extract::Json<PaymentSheetRequest>,
 ) -> Result<axum::Json<Value>, (StatusCode, String)> {
     info!("Received payment sheet request: {:?}", payload);
-    let client = Client::new(state.stripe_keys.secret_key.clone());
+
+    let state = state.lock().await;
+    let secret_key = state.stripe_keys.secret_key.clone();
+    let publishable_key = state.stripe_keys.publishable_key.clone();
+    let client = Client::new(secret_key);
+    drop(state);
 
     // 1. Create a Customer.
     let customer = Customer::create(
@@ -101,7 +108,7 @@ pub async fn create_payment_sheet_handler(
         "customer": customer.id,
         "ephemeralKey": ephemeral_key.secret,
         "paymentIntent": payment_intent.client_secret,
-        "publishableKey": state.stripe_keys.publishable_key,
+        "publishableKey": publishable_key
     });
 
     Ok(axum::Json(body))
@@ -117,9 +124,10 @@ pub async fn hello_handler() -> impl IntoResponse {
 /// GET /stripe endpoint retrieves the Stripe publishable key.
 #[tracing::instrument(skip(state))]
 pub async fn stripe_handler(
-    Extension(state): Extension<AppState>,
+    Extension(state): Extension<Arc<Mutex<AppState>>>,
 ) -> Result<axum::Json<Value>, (StatusCode, String)> {
     info!("Handling stripe endpoint request");
-    let body = json!({ "publishable_key": state.stripe_keys.publishable_key });
+
+    let body = json!({ "publishable_key": state.lock().await.stripe_keys.publishable_key });
     Ok(axum::Json(body))
 }

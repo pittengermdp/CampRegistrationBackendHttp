@@ -1,21 +1,25 @@
 [package]
-name = "lambda_http"
+name = "camp_registration_lambda"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-lambda_lib = { path = "../lambda_lib" }
+lambda_lib = { version = "*", git = "https://github.com/pittengermdp/CampRegistrationBackendLib.git" }
 lambda_http = "*"
-lambda_runtime = "*"
 tokio = { version = "*", features = ["macros", "rt-multi-thread"] }
 tracing = "*"
 tracing-subscriber = { version = "*", features = ["env-filter"] }
-axum = { version = "*", features = ["ws"] }
-tower-http = { version = "*", features = ["trace", "cors"] }
+axum = { version = "*", features = ["ws", "macros"] }
 hyper = { version = "*", features = ["full"] }
-tower = { version = "*", features = ["util"] }
 serde_json = "1.0.140"
 async-stripe = "0.40.2"
-thiserror = "2.0.12"
-chrono = { version = "0.4.40", features = ["serde"] }
 futures = "*"
+diesel = { version = "2.1.0", features = ["postgres", "r2d2", "serde_json", "uuid"] }
+diesel-derive-enum = { version = "2.1.0", features = ["postgres"] }
+r2d2 = "0.8.10"
+uuid = { version = "1.4.1", features = ["v4", "serde"] }
+dotenv = "0.15.0"
+serde = { version = "1.0.219", features = ["derive", "serde_derive"] }
+chrono = { version = "0.4.40", features = ["serde"] }
+
+[workspace.metadata.cross]

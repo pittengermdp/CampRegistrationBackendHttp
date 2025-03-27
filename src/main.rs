@@ -1,11 +1,12 @@
+#![feature(trivial_bounds)]
 use axum::{
     routing::{get, post},
     Extension, Router,
 };
 use lambda_http::run;
-use lambda_lib::{get_stripe_keys, structs::WebSocketService, AppState};
+use lambda_lib::{get_stripe_keys, structs::WebSocketService, AppState, DatabaseClient};
 use std::sync::Arc;
-use tower_http::trace::TraceLayer;
+use tokio::sync::Mutex;
 use tracing::{error, info};
 use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
 
@@ -15,11 +16,13 @@ mod stripe_webhook;
 use stripe_webhook::webhook_handler;
 mod websocket_handler;
 use websocket_handler::payment_status_ws_handler;
+mod database;
+use database::create_db_pool;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Initialize tracing
-    let filter = EnvFilter::from_default_env().add_directive(tracing::Level::INFO.into());
+    let filter = EnvFilter::from_default_env().add_directive(tracing::Level::TRACE.into());
     let stdout_layer = fmt::layer()
         .compact()
         .with_file(true)
@@ -42,37 +45,41 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         }
     };
 
+    // Initialize database connection
+    let db_pool = match create_db_pool() {
+        Ok(pool) => {
+            info!("Database connection pool created successfully");
+            DatabaseClient { pool }
+        }
+        Err(e) => {
+            error!("Failed to create database connection pool: {}", e);
+            return Err(e);
+        }
+    };
+
     // Initialize the WebSocket service
     let websocket_service = WebSocketService::new();
 
-    // Create AppState with optional WebSocket service
+    // Create AppState with WebSocket service
     let state = AppState {
         stripe_keys,
-        websocket_service: Some(WebSocketService::new()),
-        database_client: None, // Initialize if needed
+        websocket_service: Some(websocket_service),
+        database_client: Some(db_pool),
     };
-    let state_arc = Arc::new(state);
+    let state_arc = Arc::new(Mutex::new(state));
 
     // Configure HTTP routes
-    let stripe_routes = Router::new()
+    let app = Router::new()
+        .route("/hello", get(hello_handler))
         .route("/stripe_key", get(stripe_handler))
         .route("/payment_sheet", post(create_payment_sheet_handler))
         .route("/webhook", post(webhook_handler))
-        .layer(Extension(state_arc.clone()));
-
-    // WebSocket route for payment status updates
-    let ws_routes = Router::new()
         .route("/payment_status", get(payment_status_ws_handler))
-        .layer(Extension(state_arc.clone()));
+        .layer(Extension(state_arc));
 
-    // Build the Axum router with all endpoints
-    let app = Router::new()
-        .route("/hello", get(hello_handler))
-        .merge(stripe_routes)
-        .merge(ws_routes)
-        .layer(TraceLayer::new_for_http());
-
-    // Start the lambda handler
-    run(app).await?;
+    match run(app).await {
+        Ok(()) => info!("Lambda executed successfully"),
+        Err(e) => error!("Lambda execution error: {e}"),
+    }
     Ok(())
 }
